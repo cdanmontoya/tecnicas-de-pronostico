@@ -1,0 +1,205 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+## Instalación de librerías
+#install.packages("readxl")
+#install.packages("pastecs")
+#install.packages("forecast")
+#install.packages("xtable")
+```
+
+```{r}
+setwd("~/Documents/unal/tecnicas-de-pronostico")
+
+# Cargar librerías
+library(readxl)
+library(pastecs)
+library(forecast)
+library(xtable)
+
+source("medidas.r")
+source("medidas.yest.r")
+source("medidas.hw.r")
+```
+
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+# Lectura del archivo
+
+```{r}
+
+datos <- read_excel("precio.naranja.usa.ciudades.xls", skip = 10)
+colnames(datos)[1] ="fecha"
+colnames(datos)[2] ="precio"
+
+
+np = nrow(datos)
+#-----------------------convierte fecha a formato de R
+fechas = as.Date(datos$fecha,format="%Y/%m/%d")
+ejex.mes = seq(fechas[1],fechas[np], "months")
+ejex.anio = seq(fechas[1],fechas[np],"years")
+
+plot(
+  fechas,
+  datos$precio,
+  xaxt="n",
+  panel.first = grid(),
+  type='l',
+  lwd=2,
+  ylab='Costo promedio ($USD)'
+)
+axis.Date(1, at=ejex.mes, format="%m/%y")
+axis.Date(1, at=ejex.anio, labels = FALSE, tcl = -0.2)
+```
+
+Podemos notar que la serie tiene valores faltantes. Podemos imputar los valores nulos
+
+# Imputación de valores faltantes
+
+```{r}
+n = length(datos$precio)
+x = seq(1,n)
+
+datos.precio_imputado = regul(
+  x,
+  y=datos$precio,
+  xmin=min(x),
+  n=length(x),
+  units="months",
+  deltat=1,
+  methods="spline",
+  rule=2,
+  f=0.5,
+  periodic=FALSE,
+  window=(max(x) - min(x))/(n - 1),
+  split=100,
+  specs=NULL
+)
+
+layout(1:2)
+ts.plot(datos$precio, ylab="original")
+ts.plot(datos.precio_imputado$y$Series,ylab="imputada")
+```
+
+## Frecuencia de la tendencia
+
+Vemos un patrón en el que el primer semestre se mantiene estable, en el 3er trimestre sube de precio y luego cae en el últime trimestre
+
+```{r}
+year = 25
+plot(
+  fechas,
+  datos.precio_imputado$y$Series,
+  xaxt="n",
+  panel.first = grid(),
+  type='l',
+  lwd=2,
+  ylab='Costo promedio ($USD)',
+  xlim = c(fechas[1 + 12*year], fechas[12 + 12*year])
+)
+axis.Date(1, at=ejex.mes, format="%m/%y")
+axis.Date(1, at=ejex.anio, labels = FALSE, tcl = -0.2)
+```
+
+# 1. Estimación de los modelos
+
+```{r}
+y = ts(datos.precio_imputado$y$Series, frequency=12)
+
+t = seq(1, length(y))
+t2 = t^2
+t3 = t^3
+It = seasonaldummy(y)
+It.trig = fourier(y, 1)
+```
+
+## Ajuste de los modelos
+
+```{r}
+
+mod.cuadratico = lm(y ~ t + t2 + It)
+mod.cubico = lm(y ~ t + t2 + t3 + It)
+mod.exponencial_cuadratico <- lm(log(y) ~ t + I(t^2) + It)
+mod.nnar = nnetar(y, lambda=0)
+```
+
+```{r}
+M.cuadratico = medidas(mod.cuadratico, y, 3)
+M.cubico = medidas(mod.cubico, y, 4)
+M.exponencial_cuadratico = medidas(mod.exponencial_cuadratico, y, 2)
+M.nnar = accuracy(
+  ts(forecast(mod.nnar,h=12)$mean, frequency = 12), y
+  )
+
+M = cbind(M.cuadratico, M.cubico, M.exponencial_cuadratico, M.nnar)
+M
+```
+
+# 2. Validación cruzada
+
+## Ajuste de los modelos
+
+```{r}
+m = 12
+T = length(y)
+yi = ts(y[1:(T-m)], frequency = m)
+ti = seq(1,length(yi))
+ti2 = ti^2
+ti3 = ti^3
+Iti = seasonaldummy(yi)
+
+
+mod.cuadratico = lm(yi ~ ti + ti2 + Iti)
+mod.cubico = lm(yi ~ ti + ti2 + ti3 + Iti)
+mod.exponencial_cuadratico <- lm(log(yi) ~ ti + I(ti^2) + Iti)
+mod.nnar = nnetar(yi, lambda=0)
+```
+
+```{r}
+mod.nnar
+
+q = 2
+p = 2
+s = 1
+k = 1 + 2*(p+1)+ q*1 + q*s
+```
+
+```{r}
+M.cuadratico = medidas(mod.cuadratico, yi, 3)
+M.cubico = medidas(mod.cubico, yi, 4)
+M.exponencial_cuadratico = medidas(mod.exponencial_cuadratico, yi, 2)
+M.nnar = medidas.hw(yi, na.omit(fitted(mod.nnar)), k)
+
+M = cbind(M.cuadratico, M.cubico, M.exponencial_cuadratico, M.nnar)
+M
+```
+
+## Pronósticos
+
+```{r}
+yf = ts(y[(T-m+1):T], frequency = m)
+tf = seq(T-m+1,T,1)
+tf2 = tf ^ 2
+tf3 = tf ^ 3
+Iti = seasonaldummy(yf, m)
+
+pr = mat.or.vec(length(tf), 6)
+pr[,1] = predict(mod.cuadratico, data.frame(ti = tf, ti2 = tf2, Iti = Iti))
+pr[,2] = predict(mod.cubico, data.frame(ti = tf, ti2 = tf2, ti3 = tf3, Iti = Iti))
+pr[,3] = predict(mod.exponencial_cuadratico, data.frame(ti = tf, ti2 = tf2, It = I(Iti)))
+pr[,6] = as.numeric(forecast(mod.nnar,h=m)$mean)
+```
+
+```{r}
+par(mfrow=c(1,1))
+plot(tf, yf, type = 'o', lwd=2, ylim = c(0,1.8))
+lines(tf, pr[,1], col='blue')
+lines(tf, pr[,2], col='magenta')
+lines(tf, pr[,3], col='green')
+lines(tf, pr[,6], col='red')
+```
