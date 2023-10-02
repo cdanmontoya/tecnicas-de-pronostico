@@ -12,7 +12,7 @@ output: html_notebook
 ```
 
 ```{r}
-setwd("~/Documents/unal/tecnicas-de-pronostico")
+setwd("~/Documents/unal/tecnicas-de-pronostico/trabajo-1/")
 
 # Cargar librerías
 library(readxl)
@@ -110,6 +110,7 @@ axis.Date(1, at=ejex.anio, labels = FALSE, tcl = -0.2)
 
 ```{r}
 y = ts(datos.precio_imputado$y$Series, frequency=12)
+lny = log(y)
 
 t = seq(1, length(y))
 t2 = t^2
@@ -124,19 +125,21 @@ It.trig = fourier(y, 1)
 
 mod.cuadratico = lm(y ~ t + t2 + It)
 mod.cubico = lm(y ~ t + t2 + t3 + It)
-mod.exponencial_cuadratico <- lm(log(y) ~ t + I(t^2) + It)
+mod.exponencial_lineal = lm(lny ~ t + It)
+mod.exponencial_cuadratico <- lm(lny ~ t + I(t2) + It)
+mod.hw = hw(y, seasonal = "add", damped = TRUE)
 mod.nnar = nnetar(y, lambda=0)
 ```
 
 ```{r}
 M.cuadratico = medidas(mod.cuadratico, y, 3)
 M.cubico = medidas(mod.cubico, y, 4)
+M.exponencial_lineal = medidas(mod.exponencial_lineal, y, 2)
 M.exponencial_cuadratico = medidas(mod.exponencial_cuadratico, y, 2)
-M.nnar = accuracy(
-  ts(forecast(mod.nnar,h=12)$mean, frequency = 12), y
-  )
+M.hw = medidas.hw(y, ts(forecast(mod.hw,h=12)$mean, frequency = 12), m)
+M.nnar = medidas.hw(y, ts(forecast(mod.nnar,h=12)$mean, frequency = 12), m)
 
-M = cbind(M.cuadratico, M.cubico, M.exponencial_cuadratico, M.nnar)
+M = cbind(M.cuadratico, M.cubico, M.exponencial_lineal, M.exponencial_cuadratico, M.hw, M.nnar)
 M
 ```
 
