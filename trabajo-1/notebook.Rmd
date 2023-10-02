@@ -116,7 +116,6 @@ t = seq(1, length(y))
 t2 = t^2
 t3 = t^3
 It = seasonaldummy(y)
-It.trig = fourier(y, 1)
 ```
 
 ## Ajuste de los modelos
@@ -125,23 +124,39 @@ It.trig = fourier(y, 1)
 
 mod.cuadratico = lm(y ~ t + t2 + It)
 mod.cubico = lm(y ~ t + t2 + t3 + It)
-mod.exponencial_lineal = lm(lny ~ t + It)
-mod.exponencial_cuadratico <- lm(lny ~ t + I(t2) + It)
 mod.hw = hw(y, seasonal = "add", damped = TRUE)
 mod.nnar = nnetar(y, lambda=0)
+
+mod.lnlin = lm(lny ~ t + It)
+b0.est = mod.lnlin$coefficients[1]
+b1.est = mod.lnlin$coefficients[2]
+mod.exponencial_lineal = nls(y ~ exp(beta0 + beta1*t), data = data.frame(y, t), start = list(beta0 = b0.est, beta1 = b1.est))
+
+mod.lncuad = lm(lny ~ t + t2 + It)
+b0.est = mod.lncuad$coefficients[1]
+b1.est = mod.lncuad$coefficients[2]
+b2.est = mod.lncuad$coefficients[3]
+mod.exponencial_cuadratico <- nls(y ~ exp(beta0 + beta1 * t + beta2 * t2), start = list(beta0 = b0.est, beta1 = b1.est, beta2 = b2.est))
+
 ```
+
 
 ```{r}
 M.cuadratico = medidas(mod.cuadratico, y, 3)
 M.cubico = medidas(mod.cubico, y, 4)
 M.exponencial_lineal = medidas(mod.exponencial_lineal, y, 2)
 M.exponencial_cuadratico = medidas(mod.exponencial_cuadratico, y, 2)
-M.hw = medidas.hw(y, ts(forecast(mod.hw,h=12)$mean, frequency = 12), m)
-M.nnar = medidas.hw(y, ts(forecast(mod.nnar,h=12)$mean, frequency = 12), m)
+M.hw = medidas.hw(y, ts(forecast(mod.hw,h=12)$mean, frequency = 12), 12)
+M.nnar = medidas.hw(y, ts(forecast(mod.nnar,h=12)$mean, frequency = 12), 12)
 
 M = cbind(M.cuadratico, M.cubico, M.exponencial_lineal, M.exponencial_cuadratico, M.hw, M.nnar)
 M
 ```
+
+```{r}
+summary(mod.cuadratico)
+```
+
 
 # 2. Validación cruzada
 
@@ -159,7 +174,7 @@ Iti = seasonaldummy(yi)
 
 mod.cuadratico = lm(yi ~ ti + ti2 + Iti)
 mod.cubico = lm(yi ~ ti + ti2 + ti3 + Iti)
-mod.exponencial_cuadratico <- lm(log(yi) ~ ti + I(ti^2) + Iti)
+mod.exponencial_cuadratico <- lm(log(yi) ~ ti + ti2 + Iti)
 mod.nnar = nnetar(yi, lambda=0)
 ```
 
