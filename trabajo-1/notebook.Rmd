@@ -3,12 +3,15 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+
+
 ```{r}
 ## Instalación de librerías
 #install.packages("readxl")
 #install.packages("pastecs")
 #install.packages("forecast")
 #install.packages("xtable")
+#install.packages("strucchange")
 ```
 
 ```{r}
@@ -19,9 +22,9 @@ library(readxl)
 library(pastecs)
 library(forecast)
 library(xtable)
+library(strucchange)
 
 source("medidas.r")
-source("medidas.yest.r")
 source("medidas.hw.r")
 ```
 
@@ -123,11 +126,28 @@ It = seasonaldummy(y)
 ```{r}
 
 mod.cuadratico = lm(y ~ t + t2 + It)
+
 mod.cubico = lm(y ~ t + t2 + t3 + It)
-mod.exponencial_lineal = lm(log(y) ~ t + It)
-mod.exponencial_cuadratico = lm(log(y) ~ t + t2 + It)
+
+mod.loglineal = lm(lny ~ t + It)
+Xt.lin = cbind(rep(1, n), t, It)
+Ds.lin = data.frame(y, Xt.lin)
+theta.0.lin = coef(mod.loglineal)
+mod.exponencial_lineal = nls(y ~ exp(Xt.lin%*%theta), data = Ds.lin, start = list(theta = theta.0.lin))
+
+mod.logcuadratico = lm(lny ~ t + t2 + It)
+Xt.cuad = cbind(rep(1, n), t, t2, It)
+Ds.cuad = data.frame(y, Xt.cuad)
+theta.0.cuad = coef(mod.logcuadratico)
+mod.exponencial_cuadratico = nls(y ~ exp(Xt.cuad%*%theta), data = Ds.cuad, start = list(theta = theta.0.cuad))
+
 mod.hw = hw(y, seasonal = "add", damped = TRUE)
+
 mod.nnar = nnetar(y, lambda=0)
+
+
+# mod.exponencial_lineal = lm(log(y) ~ t + It)
+# mod.exponencial_cuadratico = lm(log(y) ~ t + t2 + It)
 
 # mod.lnlin = lm(lny ~ t + It)
 # b0.est = mod.lnlin$coefficients[1]
@@ -148,15 +168,15 @@ M.cuadratico = medidas(mod.cuadratico, y, 3)
 M.cubico = medidas(mod.cubico, y, 4)
 M.exponencial_lineal = medidas(mod.exponencial_lineal, y, 2)
 M.exponencial_cuadratico = medidas(mod.exponencial_cuadratico, y, 2)
-M.hw = medidas.hw(y, ts(forecast(mod.hw,h=12)$mean, frequency = 12), 12)
-M.nnar = medidas.hw(y, ts(forecast(mod.nnar,h=12)$mean, frequency = 12), 12)
+M.hw = medidas.hw(y, ts(fitted(mod.hw), frequency = 12), 12)
+M.nnar = medidas.hw(y, ts(fitted(mod.nnar), frequency = 12), 12)
 
 M = cbind(M.cuadratico, M.cubico, M.exponencial_lineal, M.exponencial_cuadratico, M.hw, M.nnar)
 M
 ```
 
 ```{r}
-summary(mod.cuadratico)
+medidas.hw(y, ts(fitted(mod.nnar), frequency = 12), 12)
 ```
 
 
@@ -206,13 +226,29 @@ pr[,1] = predict(mod.cuadratico, data.frame(ti = tf, ti2 = tf2, Iti = Iti))
 pr[,2] = predict(mod.cubico, data.frame(ti = tf, ti2 = tf2, ti3 = tf3, Iti = Iti))
 pr[,3] = ts(predict(mod.exponencial_lineal, data.frame(ti = tf, It = I(Iti))),frequency = 12)
 pr[,4] = ts(predict(mod.exponencial_cuadratico, data.frame(ti = tf, ti2 = tf2, It = I(Iti))),frequency = 12)
-pr[,5] = as.numeric(forecast(mod.hw,h=m)$mean)
-pr[,6] = as.numeric(forecast(mod.nnar,h=m)$mean)
+pr[,5] = ts(fitted(mod.hw), frequency = 12)[501:512]
+pr[,6] = as.numeric(fitted(mod.nnar))[501:512]
 ```
 
 ```{r}
+
+A=rbind(
+accuracy(ts(pr[,1],frequency=12),yf), 
+accuracy(ts(pr[,2],frequency=12),yf),
+accuracy(ts(pr[,3],frequency=12),yf),
+accuracy(ts(pr[,4],frequency=12),yf),
+accuracy(ts(pr[,5],frequency=12),yf),
+accuracy(ts(pr[,6],frequency=12),yf))
+
+rownames(A) = c("Cuad","Cúb", "Exp.lin", "Exp.cuad", "HW", "Red")
+(A)    
+```
+
+
+
+```{r}
 par(mfrow=c(1,1))
-plot(tf, yf, type = 'o', lwd=2, ylim = c(0, 1.8))
+plot(tf, yf, type = 'o', lwd=2, ylim = c(1.2, 2))
 lines(tf, pr[,1], col='blue')
 lines(tf, pr[,2], col='magenta')
 lines(tf, pr[,3], col='green')
